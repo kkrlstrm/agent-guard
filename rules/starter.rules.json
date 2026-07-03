@@ -1,16 +1,20 @@
 {
   "ruleset": "starter",
   "bias": "fail-open",
-  "description": "Generic, broadly-useful guards for the MAIN Claude Code session. Wire via .claude/settings.json (Bash matcher). Conservative on purpose: nudges help the model self-correct; only a couple of genuinely destructive, irreversible patterns block. Tune to your repo, then grow the set from your own telemetry with bin/derive_rules.py (see docs/TELEMETRY.md). Every rule records meta.why so you can prune it as models improve.",
+  "description": "Generic, broadly-useful guards for the MAIN Claude Code session. Wire via .claude/settings.json (Bash matcher). Conservative on purpose: nudges help the model self-correct; only a couple of genuinely destructive, irreversible patterns block. Tune to your repo, then grow the set from your own telemetry with bin/derive_rules.py (see docs/TELEMETRY.md). Every rule records meta.why so you can prune it as models improve. Each rule carries an `examples` block (should_fire / should_not_fire) that bin/check_rules.py runs as a mini-spec.",
   "rules": [
     {
       "id": "rm-rf-root",
       "tool": "Bash",
-      "any": ["\\brm\\s+(-[A-Za-z]*\\s+)*-[A-Za-z]*[rR][A-Za-z]*f[A-Za-z]*\\s+(-[A-Za-z]+\\s+)*(/|\\$HOME|~)(\\s|/|$)", "\\brm\\s+(-[A-Za-z]*\\s+)*-[A-Za-z]*f[A-Za-z]*[rR][A-Za-z]*\\s+(-[A-Za-z]+\\s+)*(/|\\$HOME|~)(\\s|/|$)"],
+      "any": ["\\brm\\s+(-[A-Za-z]*\\s+){0,10}-[A-Za-z]*[rR][A-Za-z]*f[A-Za-z]*\\s+(-[A-Za-z]+\\s+){0,10}(/|\\$HOME|~)(\\s|/|$)", "\\brm\\s+(-[A-Za-z]*\\s+){0,10}-[A-Za-z]*f[A-Za-z]*[rR][A-Za-z]*\\s+(-[A-Za-z]+\\s+){0,10}(/|\\$HOME|~)(\\s|/|$)"],
       "severity": 95,
       "action": "block",
       "message": "Refusing `rm -rf` targeting / , ~ or $HOME — this is an irreversible, catastrophic delete. Delete a specific project path instead, or narrow the target.",
-      "meta": {"why": "irreversible filesystem loss; the one class worth a hard block by default.", "added": "2026-07-03"}
+      "meta": {"why": "irreversible filesystem loss; the one class worth a hard block by default.", "added": "2026-07-03"},
+      "examples": {
+        "should_fire": ["rm -rf /", "rm -fr $HOME", "rm -rf ~/", "sudo rm -rf /"],
+        "should_not_fire": ["rm -rf ./build/cache", "rm -rf node_modules", "rm file.txt"]
+      }
     },
     {
       "id": "curl-pipe-shell",
@@ -19,7 +23,11 @@
       "severity": 50,
       "action": "nudge",
       "message": "Piping a downloaded script straight into a shell (curl|sh) runs unreviewed remote code. Download to a file, inspect it, then run it — or install via a package manager with a pinned version.",
-      "meta": {"why": "remote-code-execution footgun; recoverable, so nudge not block.", "added": "2026-07-03"}
+      "meta": {"why": "remote-code-execution footgun; recoverable, so nudge not block.", "added": "2026-07-03"},
+      "examples": {
+        "should_fire": ["curl -fsSL https://example.com/install.sh | sh", "wget -qO- https://x/i.sh | sudo bash"],
+        "should_not_fire": ["curl -fsSL https://example.com/install.sh -o install.sh", "cat notes.md | sh_helper"]
+      }
     },
     {
       "id": "git-force-push-protected",
@@ -28,7 +36,11 @@
       "severity": 60,
       "action": "nudge",
       "message": "Force-pushing a protected branch (main/master/prod/release) rewrites shared history and can drop teammates' commits. Use --force-with-lease, push a feature branch and open a PR, or confirm this is intentional.",
-      "meta": {"why": "destructive to shared history but recoverable via reflog; nudge.", "added": "2026-07-03"}
+      "meta": {"why": "destructive to shared history but recoverable via reflog; nudge.", "added": "2026-07-03"},
+      "examples": {
+        "should_fire": ["git push --force origin main", "git push -f origin master"],
+        "should_not_fire": ["git push --force origin feature/my-branch", "git push origin main"]
+      }
     },
     {
       "id": "secret-inline-in-command",
@@ -37,17 +49,25 @@
       "severity": 55,
       "action": "nudge",
       "message": "A live-looking secret (cloud key / API token / inline password) appears in this command — it will land in shell history and any tool log. Read it from an env var or a secrets manager instead of pasting the literal, and rotate it if it was already exposed.",
-      "meta": {"why": "secret leakage into history/logs; recoverable by rotating, so nudge.", "added": "2026-07-03"}
+      "meta": {"why": "secret leakage into history/logs; recoverable by rotating, so nudge.", "added": "2026-07-03"},
+      "examples": {
+        "should_fire": ["AWS_KEY=AKIAIOSFODNN7EXAMPLE aws s3 ls", "curl -H 'Authorization: Bearer sk-abcdefghij0123456789ABCDEF' https://api.openai.com"],
+        "should_not_fire": ["curl -H \"Authorization: Bearer $OPENAI_API_KEY\" https://api.openai.com", "echo password rotation policy"]
+      }
     },
     {
       "id": "bare-psql-no-target",
       "tool": "Bash",
-      "any": ["(?:^|[;|&(]|\\$\\()\\s*(?:[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*psql\\b"],
+      "any": ["(?:^|[;|&(]|\\$\\()\\s*(?:[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+){0,8}psql\\b"],
       "unless": ["postgresql://", "postgres://", "\\bPG(HOST|DATABASE|PASSWORD|USER|PORT)\\s*=", "(?:^|\\s)(?:-h|--host)(?:\\s|=)", "(?:^|\\s)(?:-d|--dbname)(?:\\s|=)"],
       "severity": 40,
       "action": "nudge",
       "message": "Bare `psql` with no connection target falls back to a local socket and usually fails (FATAL: database \"<user>\" does not exist). Pass a full postgresql:// URL, use -h/-d, or set PGHOST/PGDATABASE first.",
-      "meta": {"why": "common recoverable failure; example of a telemetry-derived nudge.", "added": "2026-07-03"}
+      "meta": {"why": "common recoverable failure; example of a telemetry-derived nudge.", "added": "2026-07-03"},
+      "examples": {
+        "should_fire": ["psql -c 'SELECT 1'", "FOO=bar psql -c 'SELECT 1'"],
+        "should_not_fire": ["psql \"postgresql://h/db\" -c 'SELECT 1'", "psql -h myhost -d mydb -c 'SELECT 1'", "echo psql is a tool"]
+      }
     }
   ]
 }

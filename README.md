@@ -90,7 +90,12 @@ Two entry scripts share one engine:
 | Entry | Wired via | Ruleset | Bias |
 |-------|-----------|---------|------|
 | `pretooluse-guard.py` | `.claude/settings.json` (Bash, MCP) | `rules/starter.rules.json` | fail-open |
-| `validate-readonly.py` | a sub-agent's frontmatter (Bash) | `rules/readonly-db.rules.json` | fail-closed |
+| `validate-readonly.py` | a sub-agent's frontmatter (Bash) | `rules/readonly-db.rules.json` | hard-block backstop¹ |
+
+¹ It hard-blocks a *matched* mutation, but the hook still falls open on any guard
+error (a guard bug must never wedge a session), so it isn't a true fail-closed
+boundary. Pair it with a `SELECT`-only DB role for the real guarantee. See
+[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ### Rules are config
 
@@ -117,9 +122,32 @@ Each action maps to a real Claude Code hook mechanism:
 | `monitor` | audited only, never surfaced | yes |
 
 Precedence is **most-restrictive-wins** (`block > deny > nudge > monitor`);
-severity only breaks ties within an action. Full schema in [rules/](rules/) and
-the engine in [guard/engine.py](guard/engine.py). The decision guide for which
-bias to pick is [docs/WHEN_TO_USE.md](docs/WHEN_TO_USE.md).
+severity only breaks ties within an action. `field` defaults to `command` (Bash),
+and takes a **dotted path** for nested MCP arguments (`"field": "args.repository"`,
+`"field": "params.0.name"`) so a rule can match structured tool input, not just a
+flat string. Full schema in [rules/](rules/) and the engine in
+[guard/engine.py](guard/engine.py). The decision guide for which bias to pick is
+[docs/WHEN_TO_USE.md](docs/WHEN_TO_USE.md).
+
+Each rule can carry an `examples` block (`should_fire` / `should_not_fire`) that
+doubles as its spec and is checked by the validator below.
+
+## Verify it's working
+
+The biggest real failure mode for a hook tool is silent: it isn't wired, or a
+rules file is broken, so nothing fires. Two commands make that checkable.
+
+```bash
+python3 bin/doctor.py --project /path/to/project   # end-to-end self-test
+python3 bin/check_rules.py rules/*.json mine.json  # validate rules + run examples
+```
+
+`doctor` drives the real entry scripts (does `rm -rf /` block? does `SELECT`
+pass?), checks the audit path is writable, confirms the hook is wired in your
+project, and warns if the `db-reader` agent is installed under a plugin path where
+hooks are ignored. `check_rules` parses every rule, compiles every regex, lints
+for catastrophic-backtracking shapes, and runs each rule's `examples` as
+assertions. Both are stdlib and exit non-zero on failure, so they drop into CI.
 
 ## Grow rules from your own telemetry
 
@@ -146,9 +174,17 @@ python3 guard/audit.py tail     # last 20 verdicts
 ```
 
 Every fired verdict appends to a hash-chained JSONL (each line hashes the prior
-line + its payload), so any later edit breaks the chain. That log is the
-evidence layer, and it's the telemetry the next round of rule derivation reads.
-Default `~/.agent-guard/audit.jsonl`; override with `$AGENT_GUARD_AUDIT`.
+line + its payload), so any later in-place edit breaks the chain. Each event
+carries a timestamp, the fired rule ids + decision, the agent-guard version, the
+session id and cwd (when the hook provides them), and — secret-safely — a SHA-256
+of the command plus a **redacted** preview, so a command containing a live key is
+never persisted verbatim. That log is the evidence layer, and it's the telemetry
+the next round of rule derivation reads. Default `~/.agent-guard/audit.jsonl`;
+override with `$AGENT_GUARD_AUDIT`.
+
+It's tamper-*evident* for local review, not a compliance vault: someone with
+write access can rewrite the whole chain from genesis unless you anchor the head
+hash externally. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ## Tests
 
@@ -167,8 +203,9 @@ should land here as a fixture too.
 This isn't a universal agent-security platform, and it doesn't try to be. It's a
 tiny, local control layer for Claude Code workflows, aligned with where agent
 security is heading (runtime tool-call boundaries, side-effect authorization) but
-deliberately small. The read-only DB firewall is a backstop above a real
-credential boundary (a `SELECT`-only role), not a replacement for one.
+deliberately small. The read-only DB backstop is a layer above a real credential
+boundary (a `SELECT`-only role), not a replacement for one. The full protects /
+doesn't-protect list is in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 **A guard bug must never wedge a session.** Every entry point exits 0 (allow) on
 any unexpected error. Read [docs/GOTCHAS.md](docs/GOTCHAS.md) before relying on
@@ -178,6 +215,7 @@ it, especially the plugin-hooks and `bypassPermissions` notes.
 
 - [docs/WHEN_TO_USE.md](docs/WHEN_TO_USE.md) — recovery-first: which bias to pick
 - [docs/TELEMETRY.md](docs/TELEMETRY.md) — deriving rules from your own logs
+- [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) — what it protects against, and what it doesn't
 - [docs/GOTCHAS.md](docs/GOTCHAS.md) — plugin hooks, bypassPermissions, regex limits
 
 ## License

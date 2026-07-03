@@ -37,6 +37,31 @@ def _flags(rule):
     return re.IGNORECASE if "i" in (rule.get("flags") or "") else 0
 
 
+def get_field(tool_input, field):
+    """Resolve a rule's field against tool_input. Supports dotted paths for
+    nested structured args (e.g. "args.repository", "params.0.name") so MCP tools
+    whose danger lives in a nested JSON argument can be matched, not just Bash's
+    flat "command". A non-string leaf is JSON-encoded so a regex can still match
+    it. Returns "" if the path is missing."""
+    cur = tool_input
+    for part in field.split("."):
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        elif isinstance(cur, list) and part.isdigit() and int(part) < len(cur):
+            cur = cur[int(part)]
+        else:
+            return ""
+        if cur is None:
+            return ""
+    if isinstance(cur, str):
+        return cur
+    try:
+        import json as _json
+        return _json.dumps(cur, sort_keys=True)
+    except Exception:
+        return str(cur)
+
+
 def rule_fires(rule, tool_name, tool_input):
     """True iff this rule matches the call. Never raises on a normal rule/input."""
     if not fnmatch.fnmatchcase(tool_name, rule.get("tool", "*")):
@@ -47,8 +72,7 @@ def rule_fires(rule, tool_name, tool_input):
         # Tool-only rule (e.g. deny an entire MCP surface regardless of args).
         return True
 
-    field = rule.get("field", "command")
-    val = tool_input.get(field, "")
+    val = get_field(tool_input, rule.get("field", "command"))
     if not isinstance(val, str) or not val.strip():
         return False
 
@@ -124,9 +148,35 @@ def verify_rules(rules):
             problems.append(f"{rid}: unknown action {action!r}")
         if action in ("nudge", "deny") and not r.get("message"):
             problems.append(f"{rid}: {action} rule needs a message")
+        if action == "block" and not r.get("message"):
+            problems.append(f"{rid}: block rule needs a message")
         for p in (r.get("any") or []) + (r.get("unless") or []):
             try:
                 re.compile(p)
             except re.error as e:
                 problems.append(f"{rid}: bad regex {p!r}: {e}")
     return problems
+
+
+# Patterns that commonly cause catastrophic backtracking. The engine runs on
+# every matching tool call, so a pathological regex can make Claude Code feel
+# hung. We can't set a per-regex timeout in stdlib `re`, so we flag the shapes.
+_REDOS_HINTS = [
+    re.compile(r"\([^)]*[+*]\)[+*]"),     # (x+)+  /  (x*)*  — nested quantifiers
+    re.compile(r"\(([^)|]+)\|\1\)[+*]"),  # (a|a)* — overlapping alternation
+]
+
+
+def warn_rules(rules):
+    """Non-fatal lint. Returns a list of warning strings ([] = clean). Separate
+    from verify_rules so a warning never fails validation, only advises."""
+    warnings = []
+    for r in rules:
+        rid = r.get("id", "?")
+        for p in (r.get("any") or []) + (r.get("unless") or []):
+            for hint in _REDOS_HINTS:
+                if hint.search(p):
+                    warnings.append(f"{rid}: regex {p!r} may backtrack catastrophically "
+                                    "(nested/overlapping quantifiers) — the guard runs on every call.")
+                    break
+    return warnings

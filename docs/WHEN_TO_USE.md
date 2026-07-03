@@ -34,6 +34,14 @@ A deterministic hook is a better judge here than the model itself: an LLM asked 
 review its own action skews positive and can rationalize past its own rules. A hook
 can't be talked out of its verdict.
 
+**Precision on "fail closed."** This means the rule blocks *on a match*. It does
+not mean the hook process fails closed: on any guard error (bad rules file,
+malformed input, a bug) the hook still exits 0 and allows the call, because a
+guard must never wedge a session. So a `block` rule is a hard-blocking *backstop*,
+not a boundary. For something that truly must not happen (a mutation from a
+read-only sub-agent), back the rule with a real boundary — a `SELECT`-only DB
+role. See [THREAT_MODEL.md](./THREAT_MODEL.md).
+
 ## The decision, in one line
 
 > **Nudge when the model can recover. Block when it can't.**
@@ -43,7 +51,7 @@ can't be talked out of its verdict.
 Both stop the call. `deny` (permissionDecision) is the clean, reasoned refusal for
 the main session — it hands the model a reason and exits 0. `block` (exit 2) is the
 hard stop for a least-privilege sub-agent — it survives a parent's
-`bypassPermissions`, which `deny` does not. Use `block` for the read-only firewall;
+`bypassPermissions`, which `deny` does not. Use `block` for the read-only backstop;
 `deny` for "this tool is the wrong path" in a trusted session.
 
 ## `monitor` — the on-ramp

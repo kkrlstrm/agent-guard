@@ -14,7 +14,7 @@
     {
       "id": "bare-psql-no-target",
       "tool": "Bash",
-      "any": ["(?:^|[;|&(]|\\$\\()\\s*(?:[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*psql\\b"],
+      "any": ["(?:^|[;|&(]|\\$\\()\\s*(?:[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+){0,8}psql\\b"],
       "unless": ["neon-psql", "postgresql://", "postgres://", "\\bPG(HOST|DATABASE|PASSWORD|USER|PORT)\\s*=", "(?:^|\\s)(?:-h|--host)(?:\\s|=)"],
       "severity": 50,
       "action": "nudge",
