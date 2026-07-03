@@ -140,4 +140,4 @@ DB role — the regex is the cheap backstop above it. Read
 
 ## License
 
-MIT.
+GNU AGPL-3.0 — see [LICENSE](LICENSE). Copyright (C) 2026 Kai Karlstrom.
