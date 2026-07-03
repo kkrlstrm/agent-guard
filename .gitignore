@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+*.audit.jsonl
+audit.jsonl
+/candidates*.rules.json

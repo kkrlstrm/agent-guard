@@ -1,0 +1,22 @@
+{
+  "ruleset": "readonly-db",
+  "bias": "fail-closed",
+  "description": "Hard read-only firewall for a least-privilege analyst sub-agent. Wire it into that sub-agent's frontmatter (Bash matcher). Blocks any SQL mutation / DDL / DCL. False positives (blocking a harmless read) are acceptable; false negatives are not. This regex layer is the CHEAP backstop — the real guarantee is a SELECT-only DB role (see agents/db-reader.md and docs/GOTCHAS.md).",
+  "rules": [
+    {"id": "insert-into",      "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "INSERT INTO", "any": ["\\bINSERT\\s+INTO\\b"]},
+    {"id": "update-set",       "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "UPDATE ... SET", "any": ["\\bUPDATE\\b[^;]*\\bSET\\b"]},
+    {"id": "delete-from",      "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "DELETE FROM", "any": ["\\bDELETE\\s+FROM\\b"]},
+    {"id": "truncate",         "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "TRUNCATE", "any": ["\\bTRUNCATE\\b"]},
+    {"id": "drop",             "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "DROP", "any": ["\\bDROP\\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW|MATERIALIZED|SEQUENCE|FUNCTION|TRIGGER|ROLE|USER|TYPE|EXTENSION)\\b"]},
+    {"id": "alter",            "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "ALTER", "any": ["\\bALTER\\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW|SEQUENCE|ROLE|USER|SYSTEM|TYPE)\\b"]},
+    {"id": "create",           "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "CREATE", "any": ["\\bCREATE\\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW|MATERIALIZED|SEQUENCE|FUNCTION|TRIGGER|ROLE|USER|EXTENSION|TYPE|TEMP|TEMPORARY)\\b"]},
+    {"id": "grant-revoke",     "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "GRANT/REVOKE", "any": ["\\b(GRANT|REVOKE)\\b"]},
+    {"id": "copy-from",        "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "COPY ... FROM (import)", "any": ["\\bCOPY\\b[^;]*\\bFROM\\b"]},
+    {"id": "psql-copy-from",   "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "psql \\copy ... from", "any": ["\\\\copy\\b[^;]*\\bfrom\\b"]},
+    {"id": "select-into",      "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "SELECT ... INTO (creates table)", "any": ["\\bSELECT\\b[^;]*\\bINTO\\b"]},
+    {"id": "sequence-mutate",  "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "sequence mutation", "any": ["\\b(setval|nextval)\\s*\\("]},
+    {"id": "maintenance",      "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "maintenance write", "any": ["\\b(VACUUM|REINDEX|CLUSTER)\\b"]},
+    {"id": "do-block",         "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "DO $$ (anonymous code block)", "any": ["\\bDO\\s+\\$\\$"]},
+    {"id": "call-proc",        "tool": "Bash", "flags": "i", "norm": true, "severity": 90, "action": "block", "message": "CALL (stored procedure)", "any": ["\\bCALL\\s+[A-Za-z_]"]}
+  ]
+}

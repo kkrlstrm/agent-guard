@@ -1,0 +1,38 @@
+{
+  "ruleset": "example-gtm-repo",
+  "bias": "fail-open",
+  "description": "WORKED EXAMPLE (not a default) — the three real rules agent-guard was born from, in a private GTM automation repo. Each was derived from cc-logger telemetry (~3wk / 37k tool calls): a recurring failure became a rule, and the failure count is recorded in meta.why. This is what your own starter.rules.json should look like after a few passes of bin/derive_rules.py against your telemetry. Point AGENT_GUARD_RULES at a file like this, or merge the rules you want into rules/starter.rules.json.",
+  "rules": [
+    {
+      "id": "neon-mcp-wrong-account",
+      "tool": "mcp__Neon__*",
+      "severity": 100,
+      "action": "deny",
+      "message": "Neon MCP is connected to the wrong account and fails ~half the time. Use the sanctioned DB paths instead (project report CLI / typed db helper / a psql wrapper that clears libpq env).",
+      "meta": {"why": "~14 logged failures: wrong Neon account.", "added": "2026-06-05", "telemetry_ref": "cc-logger"}
+    },
+    {
+      "id": "bare-psql-no-target",
+      "tool": "Bash",
+      "any": ["(?:^|[;|&(]|\\$\\()\\s*(?:[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*psql\\b"],
+      "unless": ["neon-psql", "postgresql://", "postgres://", "\\bPG(HOST|DATABASE|PASSWORD|USER|PORT)\\s*=", "(?:^|\\s)(?:-h|--host)(?:\\s|=)"],
+      "severity": 50,
+      "action": "nudge",
+      "message": "Bare `psql` with no connection target falls back to the local socket and fails. Use the repo's psql wrapper, pass a full postgresql:// URL, or prefix PGDATABASE='' PGHOST='' PGPORT='' PGUSER='' before psql.",
+      "meta": {"why": "~18 logged failures: bare psql -> local socket.", "added": "2026-06-05", "telemetry_ref": "cc-logger"}
+    },
+    {
+      "id": "shell-source-dotenv",
+      "tool": "Bash",
+      "any": [
+        "(?:^|[;&|]|\\bset\\s+-a\\b[^;]*[;&]?\\s*)\\s*(?:source|\\.)\\s+[^\\s;|&]*\\.env\\b",
+        "export\\s+\\$\\([^)]*\\.env",
+        "\\.env\\b[^\\n|]*\\|\\s*xargs"
+      ],
+      "severity": 50,
+      "action": "nudge",
+      "message": "Don't shell-source .env — DSN values contain '&', so source/xargs word-splitting breaks them. Read env in Python (python-dotenv or a registry helper), or take the DSN straight from a helper CLI.",
+      "meta": {"why": "~20+ logged failures: shell-sourcing .env breaks on '&'.", "added": "2026-06-05", "telemetry_ref": "cc-logger"}
+    }
+  ]
+}

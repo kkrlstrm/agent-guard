@@ -1,0 +1,22 @@
+{
+  "ruleset": "readonly",
+  "cases": [
+    {"name": "delete blocks", "tool_name": "Bash", "command": "psql \"postgresql://x\" -c \"DELETE FROM leads WHERE id=1\"", "expect": {"returncode": 2, "stderr_contains": "agent-guard"}},
+    {"name": "insert blocks", "tool_name": "Bash", "command": "psql -c \"INSERT INTO leads (id) VALUES (1)\"", "expect": {"returncode": 2, "stderr_contains": "INSERT INTO"}},
+    {"name": "update blocks", "tool_name": "Bash", "command": "psql -c \"UPDATE leads SET title='x' WHERE id=1\"", "expect": {"returncode": 2, "stderr_contains": "UPDATE"}},
+    {"name": "drop blocks", "tool_name": "Bash", "command": "psql -c \"DROP TABLE leads\"", "expect": {"returncode": 2, "stderr_contains": "DROP"}},
+    {"name": "alter blocks", "tool_name": "Bash", "command": "psql -c 'ALTER TABLE leads ADD COLUMN a int'", "expect": {"returncode": 2}},
+    {"name": "create blocks", "tool_name": "Bash", "command": "psql -c 'CREATE TABLE t (a int)'", "expect": {"returncode": 2}},
+    {"name": "truncate blocks", "tool_name": "Bash", "command": "psql -c 'TRUNCATE leads'", "expect": {"returncode": 2}},
+    {"name": "grant blocks", "tool_name": "Bash", "command": "psql -c 'GRANT SELECT ON leads TO ro'", "expect": {"returncode": 2}},
+    {"name": "select-into blocks", "tool_name": "Bash", "command": "psql -c \"SELECT * INTO tmp FROM leads\"", "expect": {"returncode": 2, "stderr_contains": "SELECT ... INTO"}},
+    {"name": "psql-copy-from blocks", "tool_name": "Bash", "command": "psql -c '\\copy t from data.csv'", "expect": {"returncode": 2}},
+    {"name": "vacuum blocks", "tool_name": "Bash", "command": "psql -c 'VACUUM ANALYZE leads'", "expect": {"returncode": 2}},
+
+    {"name": "plain select allows", "tool_name": "Bash", "command": "psql \"postgresql://x\" -c \"SELECT count(*) FROM leads\"", "expect": {"returncode": 0, "stdout_empty": true}},
+    {"name": "WHERE status CREATED does not false-positive", "tool_name": "Bash", "command": "psql -c \"SELECT * FROM campaigns WHERE status = 'CREATED'\"", "expect": {"returncode": 0, "stdout_empty": true}},
+    {"name": "created_at column does not false-positive", "tool_name": "Bash", "command": "psql -c \"SELECT created_at, updated_at FROM leads ORDER BY created_at DESC LIMIT 5\"", "expect": {"returncode": 0, "stdout_empty": true}},
+    {"name": "delete substring in value does not false-positive", "tool_name": "Bash", "command": "psql -c \"SELECT body FROM replies WHERE body ILIKE '%please delete me%' LIMIT 3\"", "expect": {"returncode": 0, "stdout_empty": true}},
+    {"name": "grep for a keyword allows", "tool_name": "Bash", "command": "grep -rn 'SELECT' src/", "expect": {"returncode": 0, "stdout_empty": true}}
+  ]
+}

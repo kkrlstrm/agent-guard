@@ -1,0 +1,53 @@
+{
+  "ruleset": "starter",
+  "bias": "fail-open",
+  "description": "Generic, broadly-useful guards for the MAIN Claude Code session. Wire via .claude/settings.json (Bash matcher). Conservative on purpose: nudges help the model self-correct; only a couple of genuinely destructive, irreversible patterns block. Tune to your repo, then grow the set from your own telemetry with bin/derive_rules.py (see docs/TELEMETRY.md). Every rule records meta.why so you can prune it as models improve.",
+  "rules": [
+    {
+      "id": "rm-rf-root",
+      "tool": "Bash",
+      "any": ["\\brm\\s+(-[A-Za-z]*\\s+)*-[A-Za-z]*[rR][A-Za-z]*f[A-Za-z]*\\s+(-[A-Za-z]+\\s+)*(/|\\$HOME|~)(\\s|/|$)", "\\brm\\s+(-[A-Za-z]*\\s+)*-[A-Za-z]*f[A-Za-z]*[rR][A-Za-z]*\\s+(-[A-Za-z]+\\s+)*(/|\\$HOME|~)(\\s|/|$)"],
+      "severity": 95,
+      "action": "block",
+      "message": "Refusing `rm -rf` targeting / , ~ or $HOME — this is an irreversible, catastrophic delete. Delete a specific project path instead, or narrow the target.",
+      "meta": {"why": "irreversible filesystem loss; the one class worth a hard block by default.", "added": "2026-07-03"}
+    },
+    {
+      "id": "curl-pipe-shell",
+      "tool": "Bash",
+      "any": ["\\bcurl\\b[^|]*\\|\\s*(sudo\\s+)?(sh|bash|zsh)\\b", "\\bwget\\b[^|]*\\|\\s*(sudo\\s+)?(sh|bash|zsh)\\b"],
+      "severity": 50,
+      "action": "nudge",
+      "message": "Piping a downloaded script straight into a shell (curl|sh) runs unreviewed remote code. Download to a file, inspect it, then run it — or install via a package manager with a pinned version.",
+      "meta": {"why": "remote-code-execution footgun; recoverable, so nudge not block.", "added": "2026-07-03"}
+    },
+    {
+      "id": "git-force-push-protected",
+      "tool": "Bash",
+      "any": ["\\bgit\\s+push\\b[^\\n]*(--force|-f\\b)[^\\n]*\\b(main|master|prod|production|release)\\b", "\\bgit\\s+push\\b[^\\n]*\\b(origin\\s+)?(main|master|prod|production|release)\\b[^\\n]*(--force|-f\\b)"],
+      "severity": 60,
+      "action": "nudge",
+      "message": "Force-pushing a protected branch (main/master/prod/release) rewrites shared history and can drop teammates' commits. Use --force-with-lease, push a feature branch and open a PR, or confirm this is intentional.",
+      "meta": {"why": "destructive to shared history but recoverable via reflog; nudge.", "added": "2026-07-03"}
+    },
+    {
+      "id": "secret-inline-in-command",
+      "tool": "Bash",
+      "any": ["(?i)\\b(AKIA[0-9A-Z]{16})\\b", "\\bsk-[A-Za-z0-9]{20,}\\b", "\\bghp_[A-Za-z0-9]{30,}\\b", "\\bglpat-[A-Za-z0-9_\\-]{20,}\\b", "(?i)(password|secret|api[_-]?key|token)\\s*=\\s*['\"][^'\"]{8,}['\"]"],
+      "severity": 55,
+      "action": "nudge",
+      "message": "A live-looking secret (cloud key / API token / inline password) appears in this command — it will land in shell history and any tool log. Read it from an env var or a secrets manager instead of pasting the literal, and rotate it if it was already exposed.",
+      "meta": {"why": "secret leakage into history/logs; recoverable by rotating, so nudge.", "added": "2026-07-03"}
+    },
+    {
+      "id": "bare-psql-no-target",
+      "tool": "Bash",
+      "any": ["(?:^|[;|&(]|\\$\\()\\s*(?:[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*psql\\b"],
+      "unless": ["postgresql://", "postgres://", "\\bPG(HOST|DATABASE|PASSWORD|USER|PORT)\\s*=", "(?:^|\\s)(?:-h|--host)(?:\\s|=)", "(?:^|\\s)(?:-d|--dbname)(?:\\s|=)"],
+      "severity": 40,
+      "action": "nudge",
+      "message": "Bare `psql` with no connection target falls back to a local socket and usually fails (FATAL: database \"<user>\" does not exist). Pass a full postgresql:// URL, use -h/-d, or set PGHOST/PGDATABASE first.",
+      "meta": {"why": "common recoverable failure; example of a telemetry-derived nudge.", "added": "2026-07-03"}
+    }
+  ]
+}
