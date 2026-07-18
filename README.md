@@ -1,5 +1,8 @@
 # agent-guard
 
+<!-- portfolio-status -->
+**Status:** Production-used — I run this against my own live agent workflows. · **Layer:** Execution controls · **[Portfolio map ›](https://github.com/kkrlstrm)**
+
 **Runtime controls for Claude Code, derived from your own agent telemetry.**
 
 [cc-logger](https://github.com/kkrlstrm/cc-logger) shows you how your agents
@@ -221,3 +224,16 @@ it, especially the plugin-hooks and `bypassPermissions` notes.
 ## License
 
 GNU AGPL-3.0 — see [LICENSE](LICENSE). Copyright (C) 2026 Kai Karlstrom.
+
+---
+
+<!-- portfolio-footer -->
+## Where this fits
+
+Part of a portfolio of **governed, AI-native GTM systems** — reference implementations and reusable patterns extracted from a private production stack. In that system this is the recovery-first control surface that turns observed failures into runtime guardrails.
+
+**Full portfolio map → [github.com/kkrlstrm](https://github.com/kkrlstrm)**
+
+Works with:
+- [cc-logger](https://github.com/kkrlstrm/cc-logger) — supplies the telemetry rules are derived from
+- [model-eval-gate](https://github.com/kkrlstrm/model-eval-gate) — the policy gate for model economics
